@@ -332,12 +332,30 @@ use crate::expand::expand;
 use crate::parse::Item;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::parse_macro_input;
+
+/// Attempts to parse the input as the wanted type, or return an IDE-friendly
+/// error [`TokenStream`] if it fails. It works by appending the compile errors
+/// to the inital input, which lets rust-analyzer provide completions properly.
+macro_rules! ide_friendly_parse_macro_input {
+    ($tokenstream:ident as $ty:ty) => {
+        match syn::parse::<$ty>($tokenstream.clone()) {
+            Ok(res) => res,
+            Err(err) => {
+                // we could avoid this second clone by making $tokenstream mut itself
+                // but I think this is cleaner
+                let mut result = $tokenstream.clone();
+                let compile_err = TokenStream::from(err.to_compile_error());
+                result.extend(compile_err);
+                return result;
+            },
+        }
+    };
+}
 
 #[proc_macro_attribute]
 pub fn async_trait(args: TokenStream, input: TokenStream) -> TokenStream {
-    let args = parse_macro_input!(args as Args);
-    let mut item = parse_macro_input!(input as Item);
+    let args = ide_friendly_parse_macro_input!(args as Args);
+    let mut item = ide_friendly_parse_macro_input!(input as Item);
     expand(&mut item, args.local);
     TokenStream::from(quote!(#item))
 }
